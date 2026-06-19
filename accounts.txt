@@ -1,9 +1,12 @@
 # Файл аккаунтов Steam
 # Добавляйте по одному на строку
 # Можно использовать: nickname, ссылку на профиль или SteamID64
-# Строки начинающиеся с # — комментарии (игнорируются)
 #
 # Примеры:
 # gaben
 # https://steamcommunity.com/id/gaben/
 # 76561197960287930
+https://steamcommunity.com/id/phajus/
+https://steamcommunity.com/profiles/76561199651543580
+https://steamcommunity.com/profiles/76561198173546179
+https://steamcommunity.com/id/idyVtron/

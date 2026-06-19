@@ -1,10 +1,5 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-Ядро проверки Steam: API, разбор аккаунтов, список игр, поиск игры.
-Логика resolve_game_name / find_game (только точное имя) и порядок run_check
-совпадают с оригинальным steam_checker.py.
-"""
+
 from __future__ import annotations
 
 import json
@@ -16,7 +11,6 @@ from typing import Callable, Optional
 
 import requests
 
-# ── базовая папка данных (рядом с exe при PyInstaller) ─────────────────
 def _default_base_dir() -> str:
     if getattr(sys, "frozen", False):
         return os.path.dirname(sys.executable)
@@ -28,7 +22,6 @@ BASE_DIR = _default_base_dir()
 CONFIG_FILE = os.path.join(BASE_DIR, "config.json")
 ACCOUNTS_FILE = os.path.join(BASE_DIR, "accounts.txt")
 OUTPUT_DIR = os.path.join(BASE_DIR, "steam_results")
-# Снимок по профилю: только игры из текущей проверки, которые есть в библиотеке.
 PROFILES_DIR = os.path.join(OUTPUT_DIR, "profiles")
 REQUEST_DELAY = 1.2
 
@@ -40,7 +33,7 @@ HEADERS = {
     )
 }
 
-LogFn = Optional[Callable[[str, str], None]]  # (message, kind)
+LogFn = Optional[Callable[[str, str], None]]
 
 
 def _log(log_fn: LogFn, msg: str, kind: str = "info") -> None:
@@ -48,12 +41,7 @@ def _log(log_fn: LogFn, msg: str, kind: str = "info") -> None:
         log_fn(msg, kind)
 
 
-# ══════════════════════════════════════════════════════════════════════
-#  СЛОВАРЬ ПСЕВДОНИМОВ: RU/EN → каноническое имя (как в библиотеке Steam).
-#  Пополнено по типичным лидерам steamdb.info/charts (названия как у Steam API).
-# ══════════════════════════════════════════════════════════════════════
 GAME_ALIASES = {
-    # ── Counter-Strike ───────────────────────────────────────────────
     "кс": "Counter-Strike 2",
     "кс го": "Counter-Strike 2",
     "кс2": "Counter-Strike 2",
@@ -71,7 +59,6 @@ GAME_ALIASES = {
     "cs 1.6": "Counter-Strike",
     "cs16": "Counter-Strike",
     "counter-strike 1.6": "Counter-Strike",
-    # ── Dota 2 ───────────────────────────────────────────────────────
     "дота": "Dota 2",
     "dota": "Dota 2",
     "дота 2": "Dota 2",
@@ -81,7 +68,6 @@ GAME_ALIASES = {
     "дотка": "Dota 2",
     "доту": "Dota 2",
     "доту 2": "Dota 2",
-    # ── Grand Theft Auto V ───────────────────────────────────────────
     "гта": "Grand Theft Auto V",
     "gta": "Grand Theft Auto V",
     "гта 5": "Grand Theft Auto V",
@@ -94,7 +80,6 @@ GAME_ALIASES = {
     "гта ол": "Grand Theft Auto V",
     "гта5 онлайн": "Grand Theft Auto V",
     "джи ти а": "Grand Theft Auto V",
-    # ── Rust, Apex, PUBG ─────────────────────────────────────────────
     "раст": "Rust",
     "rust": "Rust",
     "апекс": "Apex Legends",
@@ -106,7 +91,6 @@ GAME_ALIASES = {
     "пабг": "PUBG: BATTLEGROUNDS",
     "батлграундс": "PUBG: BATTLEGROUNDS",
     "пабджи": "PUBG: BATTLEGROUNDS",
-    # ── Cyberpunk, Witcher ───────────────────────────────────────────
     "киберпанк": "Cyberpunk 2077",
     "cyberpunk": "Cyberpunk 2077",
     "кибер": "Cyberpunk 2077",
@@ -117,14 +101,12 @@ GAME_ALIASES = {
     "witcher 3": "The Witcher 3: Wild Hunt",
     "вичер": "The Witcher 3: Wild Hunt",
     "в3": "The Witcher 3: Wild Hunt",
-    # ── Terraria, Among Us ───────────────────────────────────────────
     "террария": "Terraria",
     "terraria": "Terraria",
     "амонг ас": "Among Us",
     "among us": "Among Us",
     "амонг": "Among Us",
     "амонгас": "Among Us",
-    # ── Elden Ring, Souls ───────────────────────────────────────────
     "элден ринг": "ELDEN RING",
     "elden ring": "ELDEN RING",
     "элден": "ELDEN RING",
@@ -140,7 +122,6 @@ GAME_ALIASES = {
     "дарк соулс ремастер": "DARK SOULS™: REMASTERED",
     "dark souls remastered": "DARK SOULS™: REMASTERED",
     "ds1": "DARK SOULS™: REMASTERED",
-    # ── Valheim, TF2, Warframe ───────────────────────────────────────
     "вальхейм": "Valheim",
     "valheim": "Valheim",
     "тф2": "Team Fortress 2",
@@ -149,7 +130,6 @@ GAME_ALIASES = {
     "тим фортрес": "Team Fortress 2",
     "варфрейм": "Warframe",
     "warframe": "Warframe",
-    # ── L4D2, GMod ───────────────────────────────────────────────────
     "l4d2": "Left 4 Dead 2",
     "лфд2": "Left 4 Dead 2",
     "left 4 dead": "Left 4 Dead 2",
@@ -157,7 +137,6 @@ GAME_ALIASES = {
     "гмод": "Garry's Mod",
     "gmod": "Garry's Mod",
     "garrys mod": "Garry's Mod",
-    # ── RimWorld, Stardew, PoE ──────────────────────────────────────
     "римворлд": "RimWorld",
     "rimworld": "RimWorld",
     "стардью": "Stardew Valley",
@@ -168,7 +147,6 @@ GAME_ALIASES = {
     "poe": "Path of Exile",
     "path of exile": "Path of Exile",
     "патч оф экзайл": "Path of Exile",
-    # ── ARK, Hogwarts, DbD ───────────────────────────────────────────
     "арк": "ARK: Survival Evolved",
     "ark": "ARK: Survival Evolved",
     "арк выживание": "ARK: Survival Evolved",
@@ -178,13 +156,11 @@ GAME_ALIASES = {
     "дбд": "Dead by Daylight",
     "dbd": "Dead by Daylight",
     "dead by daylight": "Dead by Daylight",
-    # ── Fall Guys, Sea of Thieves ───────────────────────────────────
     "фол гайс": "Fall Guys",
     "fall guys": "Fall Guys",
     "фолгайс": "Fall Guys",
     "море воров": "Sea of Thieves",
     "sea of thieves": "Sea of Thieves",
-    # ── Hades, MHW, Satisfactory ─────────────────────────────────────
     "аид": "Hades",
     "hades": "Hades",
     "монстер хантер": "Monster Hunter: World",
@@ -193,7 +169,6 @@ GAME_ALIASES = {
     "мхв": "Monster Hunter: World",
     "сатисфактори": "Satisfactory",
     "satisfactory": "Satisfactory",
-    # ── Battlefield ────────────────────────────────────────────────────
     "бф": "Battlefield 2042",
     "bf": "Battlefield 2042",
     "bf2042": "Battlefield 2042",
@@ -203,7 +178,6 @@ GAME_ALIASES = {
     "bfv": "Battlefield™ V",
     "бф5": "Battlefield™ V",
     "bf5": "Battlefield™ V",
-    # ── Days Gone, Hollow Knight, DRG ───────────────────────────────
     "дейс гон": "Days Gone",
     "days gone": "Days Gone",
     "холлоу найт": "Hollow Knight",
@@ -212,7 +186,6 @@ GAME_ALIASES = {
     "drg": "Deep Rock Galactic",
     "дип рок": "Deep Rock Galactic",
     "рок и камень": "Deep Rock Galactic",
-    # ── No Man's Sky, Subnautica, Portal, HL2 ────────────────────────
     "no mans sky": "No Man's Sky",
     "но мэнс скай": "No Man's Sky",
     "nms": "No Man's Sky",
@@ -225,11 +198,9 @@ GAME_ALIASES = {
     "hl2": "Half-Life 2",
     "half life": "Half-Life 2",
     "half-life 2": "Half-Life 2",
-    # ── Tarkov ───────────────────────────────────────────────────────
     "тарков": "Escape from Tarkov",
     "tarkov": "Escape from Tarkov",
     "eft": "Escape from Tarkov",
-    # ── Baldur's Gate 3, Starfield, RDR2 ─────────────────────────────
     "бг3": "Baldur's Gate 3",
     "bg3": "Baldur's Gate 3",
     "baldur": "Baldur's Gate 3",
@@ -241,7 +212,6 @@ GAME_ALIASES = {
     "rdr2": "Red Dead Redemption 2",
     "red dead": "Red Dead Redemption 2",
     "ред дед": "Red Dead Redemption 2",
-    # ── Palworld, Destiny 2, Lost Ark ─────────────────────────────────
     "палворлд": "Palworld",
     "palworld": "Palworld",
     "пал мир": "Palworld",
@@ -251,7 +221,6 @@ GAME_ALIASES = {
     "дестини 2": "Destiny 2",
     "лост арк": "Lost Ark",
     "lost ark": "Lost Ark",
-    # ── Rocket League, Overwatch 2, Rainbow Six ──────────────────────
     "рокет лиг": "Rocket League",
     "rocket league": "Rocket League",
     "рл": "Rocket League",
@@ -264,7 +233,6 @@ GAME_ALIASES = {
     "r6s": "Tom Clancy's Rainbow Six® Siege",
     "сидж": "Tom Clancy's Rainbow Six® Siege",
     "rainbow six": "Tom Clancy's Rainbow Six® Siege",
-    # ── Skyrim, Fallout 4, Fallout 76 ─────────────────────────────────
     "скайрим": "The Elder Scrolls V: Skyrim",
     "skyrim": "The Elder Scrolls V: Skyrim",
     "tes v": "The Elder Scrolls V: Skyrim",
@@ -275,7 +243,6 @@ GAME_ALIASES = {
     "фоллаут 76": "Fallout 76",
     "fallout 76": "Fallout 76",
     "fo76": "Fallout 76",
-    # ── Civilization, EU4, HOI4, CK3, Stellaris ──────────────────────
     "цивилизация": "Sid Meier's Civilization VI",
     "civ 6": "Sid Meier's Civilization VI",
     "civ6": "Sid Meier's Civilization VI",
@@ -291,7 +258,6 @@ GAME_ALIASES = {
     "крусадер кингс": "Crusader Kings III",
     "stellaris": "Stellaris",
     "стелларис": "Stellaris",
-    # ── Total War, Cities Skylines, Sims ─────────────────────────────
     "тотал вар": "Total War: WARHAMMER III",
     "warhammer 3": "Total War: WARHAMMER III",
     "вархаммер 3": "Total War: WARHAMMER III",
@@ -300,7 +266,6 @@ GAME_ALIASES = {
     "симс 4": "The Sims™ 4",
     "sims 4": "The Sims™ 4",
     "the sims 4": "The Sims™ 4",
-    # ── Forza, MSFS, ETS2 ──────────────────────────────────────────────
     "форза 5": "Forza Horizon 5",
     "forza 5": "Forza Horizon 5",
     "fh5": "Forza Horizon 5",
@@ -309,7 +274,6 @@ GAME_ALIASES = {
     "ets2": "Euro Truck Simulator 2",
     "евро трек": "Euro Truck Simulator 2",
     "евротрак": "Euro Truck Simulator 2",
-    # ── Payday 2, Borderlands 3, Tiny Tina ─────────────────────────────
     "пейдей": "PAYDAY 2",
     "payday 2": "PAYDAY 2",
     "payday2": "PAYDAY 2",
@@ -318,7 +282,6 @@ GAME_ALIASES = {
     "bl3": "Borderlands 3",
     "тайна тина": "Tiny Tina's Wonderlands",
     "tiny tina": "Tiny Tina's Wonderlands",
-    # ── Resident Evil, Devil May Cry ───────────────────────────────────
     "ре4": "Resident Evil 4",
     "re4": "Resident Evil 4",
     "resident evil 4": "Resident Evil 4",
@@ -330,7 +293,6 @@ GAME_ALIASES = {
     "дмс": "Devil May Cry 5",
     "dmc5": "Devil May Cry 5",
     "devil may cry 5": "Devil May Cry 5",
-    # ── God of War, Spider-Man, Horizon, TLoU ────────────────────────
     "год оф вар": "God of War",
     "god of war": "God of War",
     "спайдер": "Marvel's Spider-Man Remastered",
@@ -342,7 +304,6 @@ GAME_ALIASES = {
     "тлоу": "The Last of Us™ Part I",
     "last of us": "The Last of Us™ Part I",
     "tlou": "The Last of Us™ Part I",
-    # ── New World, Project Zomboid, 7 Days ─────────────────────────────
     "нью ворлд": "New World",
     "new world": "New World",
     "зомбоид": "Project Zomboid",
@@ -350,7 +311,6 @@ GAME_ALIASES = {
     "7 days": "7 Days to Die",
     "7дтд": "7 Days to Die",
     "семь дней": "7 Days to Die",
-    # ── Phasmophobia, Lethal Company, Content Warning ─────────────────
     "фазма": "Phasmophobia",
     "phasmophobia": "Phasmophobia",
     "фазмофобия": "Phasmophobia",
@@ -358,7 +318,6 @@ GAME_ALIASES = {
     "lethal company": "Lethal Company",
     "контент варнинг": "Content Warning",
     "content warning": "Content Warning",
-    # ── Vampire Survivors, Factorio, Kerbal ───────────────────────────
     "вампайр": "Vampire Survivors",
     "vampire survivors": "Vampire Survivors",
     "факторио": "Factorio",
@@ -366,20 +325,17 @@ GAME_ALIASES = {
     "кербал": "Kerbal Space Program",
     "ksp": "Kerbal Space Program",
     "kerbal": "Kerbal Space Program",
-    # ── Oxygen Not Included, Don't Starve ────────────────────────────
     "oxygen not included": "Oxygen Not Included",
     "кислород": "Oxygen Not Included",
     "донт старв": "Don't Starve Together",
     "dont starve": "Don't Starve Together",
     "dst": "Don't Starve Together",
-    # ── Cuphead, Celeste, Undertale ───────────────────────────────────
     "капхед": "Cuphead",
     "cuphead": "Cuphead",
     "селеста": "Celeste",
     "celeste": "Celeste",
     "андертейл": "Undertale",
     "undertale": "Undertale",
-    # ── Slime Rancher, PowerWash, House Flipper ──────────────────────
     "slime rancher 2": "Slime Rancher 2",
     "slime rancher": "Slime Rancher 2",
     "слайм ранчер": "Slime Rancher 2",
@@ -387,7 +343,6 @@ GAME_ALIASES = {
     "керхер": "PowerWash Simulator",
     "флиппер": "House Flipper",
     "house flipper": "House Flipper",
-    # ── Hitman, Dishonored, Prey ─────────────────────────────────────
     "хитман": "HITMAN 3",
     "hitman 3": "HITMAN 3",
     "hitman": "HITMAN 3",
@@ -395,37 +350,31 @@ GAME_ALIASES = {
     "dishonored": "Dishonored 2",
     "прей": "Prey",
     "prey": "Prey",
-    # ── Metro, STALKER ────────────────────────────────────────────────
     "метро": "Metro Exodus",
     "metro exodus": "Metro Exodus",
     "метро исход": "Metro Exodus",
     "сталкер": "S.T.A.L.K.E.R. 2: Heart of Chornobyl",
     "stalker 2": "S.T.A.L.K.E.R. 2: Heart of Chornobyl",
     "сталкер 2": "S.T.A.L.K.E.R. 2: Heart of Chornobyl",
-    # ── War Thunder, World of Tanks Blitz - WT on steam
     "вар тандер": "War Thunder",
     "war thunder": "War Thunder",
-    # ── SMITE, Paladins, Brawlhalla (free) ───────────────────────────
     "смайт": "SMITE",
     "smite": "SMITE",
     "паладинс": "Paladins",
     "paladins": "Paladins",
     "бравлхалла": "Brawlhalla",
     "brawlhalla": "Brawlhalla",
-    # ── osu!, Geometry Dash ──────────────────────────────────────────
     "осу": "osu!",
     "osu": "osu!",
     "osu!": "osu!",
     "geometry dash": "Geometry Dash",
     "гд": "Geometry Dash",
     "геометри даш": "Geometry Dash",
-    # ── Football Manager, NBA 2K ────────────────────────────────────
     "фм": "Football Manager 2024",
     "football manager": "Football Manager 2024",
     "fm24": "Football Manager 2024",
     "nba": "NBA 2K24",
     "nba 2k": "NBA 2K24",
-    # ── Mortal Kombat, Tekken, Street Fighter ────────────────────────
     "мк11": "Mortal Kombat 11",
     "mk11": "Mortal Kombat 11",
     "теккен": "TEKKEN 8",
@@ -434,63 +383,52 @@ GAME_ALIASES = {
     "стрит файтер": "Street Fighter™ 6",
     "sf6": "Street Fighter™ 6",
     "street fighter 6": "Street Fighter™ 6",
-    # ── For Honor, Ghost Recon, Division ──────────────────────────────
     "фор хонор": "FOR HONOR™",
     "for honor": "FOR HONOR™",
     "дивижн 2": "Tom Clancy's The Division 2",
     "division 2": "Tom Clancy's The Division 2",
-    # ── Noita, Risk of Rain 2, Gunfire Reborn ─────────────────────────
     "нойта": "Noita",
     "noita": "Noita",
     "рор2": "Risk of Rain 2",
     "risk of rain 2": "Risk of Rain 2",
     "ганфайр": "Gunfire Reborn",
     "gunfire reborn": "Gunfire Reborn",
-    # ── Sons of the Forest, The Forest ───────────────────────────────
     "сыновья леса": "Sons Of The Forest",
     "sons of the forest": "Sons Of The Forest",
     "sotf": "Sons Of The Forest",
     "the forest": "The Forest",
     "форест": "The Forest",
-    # ── Grounded, Astroneer ───────────────────────────────────────────
     "граундед": "Grounded",
     "grounded": "Grounded",
     "астронир": "ASTRONEER",
     "astroneer": "ASTRONEER",
-    # ── Raft, Green Hell, The Long Dark ───────────────────────────────
     "рафт": "Raft",
     "raft": "Raft",
     "грин хелл": "Green Hell",
     "green hell": "Green Hell",
     "лонг дарк": "The Long Dark",
     "long dark": "The Long Dark",
-    # ── Witcher 2, Witcher 1 (less common) ───────────────────────────
     "ведьмак 2": "The Witcher 2: Assassins of Kings",
     "witcher 2": "The Witcher 2: Assassins of Kings",
-    # ── Mass Effect, Dragon Age ───────────────────────────────────────
     "масс эффект": "Mass Effect™ Legendary Edition",
     "mass effect": "Mass Effect™ Legendary Edition",
     "драгон эйдж": "Dragon Age™: Inquisition",
     "dragon age": "Dragon Age™: Inquisition",
-    # ── LEGO Star Wars, Star Wars Jedi ────────────────────────────────
     "лего звездные": "LEGO® Star Wars™: The Skywalker Saga",
     "lego star wars": "LEGO® Star Wars™: The Skywalker Saga",
     "джедай": "STAR WARS Jedi: Survivor",
     "jedi survivor": "STAR WARS Jedi: Survivor",
     "fallen order": "STAR WARS Jedi: Fallen Order",
     "джедай упавший": "STAR WARS Jedi: Fallen Order",
-    # ── Atomic Heart, Control ─────────────────────────────────────────
     "атомик": "Atomic Heart",
     "atomic heart": "Atomic Heart",
     "контрол": "Control Ultimate Edition",
     "control": "Control Ultimate Edition",
-    # ── Death Stranding, MGS V ────────────────────────────────────────
     "дет стрендинг": "DEATH STRANDING DIRECTOR'S CUT",
     "death stranding": "DEATH STRANDING DIRECTOR'S CUT",
     "мгс": "METAL GEAR SOLID V: THE PHANTOM PAIN",
     "mgsv": "METAL GEAR SOLID V: THE PHANTOM PAIN",
     "metal gear": "METAL GEAR SOLID V: THE PHANTOM PAIN",
-    # ── NieR, Persona ─────────────────────────────────────────────────
     "nier": "NieR:Automata",
     "ниер": "NieR:Automata",
     "persona 5": "Persona 5 Royal",
@@ -498,84 +436,60 @@ GAME_ALIASES = {
     "p5r": "Persona 5 Royal",
     "persona 4": "Persona 4 Golden",
     "п4г": "Persona 4 Golden",
-    # ── Monster Hunter Rise ───────────────────────────────────────────
     "mhr": "MONSTER HUNTER RISE",
     "mh rise": "MONSTER HUNTER RISE",
     "райз": "MONSTER HUNTER RISE",
-    # ── Ready or Not, Insurgency ───────────────────────────────────────
     "ран": "Ready or Not",
     "ready or not": "Ready or Not",
     "инсурженси": "Insurgency: Sandstorm",
     "insurgency": "Insurgency: Sandstorm",
-    # ── Squad, Hell Let Loose, Post Scriptum ──────────────────────────
     "сквад": "Squad",
     "squad": "Squad",
     "hll": "Hell Let Loose",
     "hell let loose": "Hell Let Loose",
-    # ── ARMA 3, DayZ ────────────────────────────────────────────────────
     "арма 3": "Arma 3",
     "arma 3": "Arma 3",
     "дейзи": "DayZ",
     "dayz": "DayZ",
-    # ── Rusted Warfare niche skip
-    # ── Warhammer 40k Darktide ─────────────────────────────────────────
     "дарктайд": "Warhammer 40,000: Darktide",
     "darktide": "Warhammer 40,000: Darktide",
-    # ── Remnant 2, Outlast ───────────────────────────────────────────
     "ремнант": "Remnant II",
     "remnant 2": "Remnant II",
     "аутласт": "Outlast",
     "outlast": "Outlast",
-    # ── Ghostwire, Hi-Fi Rush ──────────────────────────────────────────
     "гоствайр": "Ghostwire: Tokyo",
     "ghostwire": "Ghostwire: Tokyo",
     "hifi rush": "Hi-Fi RUSH",
     "хай фай": "Hi-Fi RUSH",
-    # ── Like a Dragon / Yakuza ─────────────────────────────────────────
     "якуза": "Like a Dragon: Infinite Wealth",
     "yakuza": "Like a Dragon: Infinite Wealth",
     "like a dragon": "Like a Dragon: Infinite Wealth",
-    # ── Final Fantasy XIV Online (Steam) ─────────────────────────────
     "ffxiv": "FINAL FANTASY XIV Online",
     "фф14": "FINAL FANTASY XIV Online",
     "final fantasy 14": "FINAL FANTASY XIV Online",
-    # ── Genshin Impact - check steam name "Genshin Impact"
     "геншин": "Genshin Impact",
     "genshin": "Genshin Impact",
-    # ── Honkai Star Rail
     "хонкай": "Honkai: Star Rail",
     "honkai": "Honkai: Star Rail",
     "hsr": "Honkai: Star Rail",
-    # ── Warframe already
-    # ── Deep Rock - have
-    # ── Minecraft Java
     "майнкрафт": "Minecraft",
     "minecraft": "Minecraft",
     "майн": "Minecraft",
-    # ── Roblox on Steam
     "роблокс": "Roblox",
     "roblox": "Roblox",
-    # ── The Binding of Isaac
     "айзек": "The Binding of Isaac: Rebirth",
     "binding of isaac": "The Binding of Isaac: Rebirth",
     "тбои": "The Binding of Isaac: Rebirth",
-    # ── Disco Elysium
     "диско": "Disco Elysium - The Final Cut",
     "disco elysium": "Disco Elysium - The Final Cut",
-    # ── Outer Wilds
     "аутер вайлдс": "Outer Wilds",
     "outer wilds": "Outer Wilds",
-    # ── Subnautica Below Zero
     "сабнатика бз": "Subnautica: Below Zero",
     "below zero": "Subnautica: Below Zero",
-    # ── League - not on steam as main - skip
-    # ── DOTA Underlords
     "underlords": "Dota Underlords",
     "андерлордс": "Dota Underlords",
-    # ── Artifact
     "артефакт": "Artifact",
     "artifact": "Artifact",
-    # ── Чарты SteamDB / высокий CCU (точные имена из библиотеки) ─────────
     "хеллдайверс": "HELLDIVERS™ 2",
     "хеллдайверс 2": "HELLDIVERS™ 2",
     "helldivers": "HELLDIVERS™ 2",
@@ -717,12 +631,10 @@ GAME_ALIASES = {
 
 
 def list_known_game_titles() -> list[str]:
-    """Канонические названия из словаря псевдонимов — для панели выбора в GUI."""
     return sorted({v for v in GAME_ALIASES.values()}, key=str.casefold)
 
 
 def sort_game_names(games: list) -> list:
-    """Сортировка названий игр A-Я / a-z без учёта регистра (стабильная)."""
     return sorted(games, key=str.casefold)
 
 
@@ -749,11 +661,11 @@ def resolve_vanity_url(
     try:
         resp = requests.get(url, params=params, headers=HEADERS, timeout=15)
     except Exception as e:
-        _log(log_fn, f"  [ОШИБКА] Запрос ResolveVanityURL: {type(e).__name__}: {e}", "err")
+        _log(log_fn, f"  Запрос ResolveVanityURL: {type(e).__name__}: {e}", "err")
         return None
 
     if resp.status_code != 200:
-        _log(log_fn, f"  [ОШИБКА] HTTP {resp.status_code} при ResolveVanityURL", "err")
+        _log(log_fn, f"  Ошибка {resp.status_code} при ResolveVanityURL", "err")
         _log(log_fn, f"  Ответ: {resp.text[:300]}", "warn")
         return None
 
@@ -763,10 +675,10 @@ def resolve_vanity_url(
         if response.get("success") == 1:
             return str(response["steamid"])
         msg = response.get("message", "неизвестно")
-        _log(log_fn, f"  [ОШИБКА] Steam не нашёл профиль '{vanity}': {msg}", "err")
+        _log(log_fn, f"  Steam не нашёл профиль '{vanity}': {msg}", "err")
         return None
     except Exception as e:
-        _log(log_fn, f"  [ОШИБКА] Разбор JSON: {e}", "err")
+        _log(log_fn, f"  Разбор JSON: {e}", "err")
         _log(log_fn, f"  Ответ: {resp.text[:300]}", "warn")
         return None
 
@@ -786,20 +698,19 @@ def parse_account_to_steamid64(
     m = re.search(r"steamcommunity\.com/id/([^/?#]+)", s)
     if m:
         vanity = m.group(1)
-        _log(log_fn, f"  [~] Определяем профиль для vanity '{vanity}'...", "warn")
+        _log(log_fn, f"  Определяем профиль для vanity '{vanity}'...", "warn")
         return resolve_vanity_url(api_key, vanity, log_fn)
 
-    _log(log_fn, f"  [~] Определяем профиль для nickname '{s}'...", "warn")
+    _log(log_fn, f"  Определяем профиль для nickname '{s}'...", "warn")
     return resolve_vanity_url(api_key, s, log_fn)
 
 
 def fetch_persona_name(
     api_key: str, steamid64: str, log_fn: LogFn = None
 ) -> str:
-    """Отображаемое имя Steam (personaname) или пустая строка при ошибке."""
     url = "https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v2/"
     params = {"key": api_key, "steamids": steamid64}
-    _log(log_fn, "  [->] Запрос отображаемого имени профиля…", "dim")
+    _log(log_fn, "  Запрос отображаемого имени профиля…", "dim")
     try:
         resp = requests.get(url, params=params, headers=HEADERS, timeout=20)
     except Exception:
@@ -831,59 +742,56 @@ def fetch_owned_games(
         "format": "json",
     }
 
-    _log(log_fn, "  [->] Запрос списка игр библиотеки…", "dim")
+    _log(log_fn, "  Запрос списка игр библиотеки…", "dim")
 
     try:
         resp = requests.get(url, params=params, headers=HEADERS, timeout=30)
     except requests.exceptions.ConnectionError as e:
-        _log(log_fn, "  [ОШИБКА] Нет подключения к интернету!", "err")
+        _log(log_fn, "  Нет подключения к интернету!", "err")
         _log(log_fn, f"  Детали: {e}", "err")
         return None
     except requests.exceptions.Timeout:
-        _log(log_fn, "  [ОШИБКА] Таймаут запроса (30с)", "err")
+        _log(log_fn, "  Таймаут запроса (30с)", "err")
         return None
     except Exception as e:
-        _log(log_fn, f"  [ОШИБКА] {type(e).__name__}: {e}", "err")
+        _log(log_fn, f"  {type(e).__name__}: {e}", "err")
         return None
 
-    _log(log_fn, f"  [HTTP] Статус: {resp.status_code}", "info")
-
     if resp.status_code == 401:
-        _log(log_fn, "  [ОШИБКА 401] Неверный API ключ!", "err")
+        _log(log_fn, "  Неверный API ключ!", "err")
         _log(log_fn, "  Проверь ключ в настройках или в config.json.", "warn")
         return None
 
     if resp.status_code == 403:
-        _log(log_fn, "  [ОШИБКА 403] Доступ запрещён.", "err")
+        _log(log_fn, "  Доступ запрещён.", "err")
         _log(log_fn, "  Профиль закрыт или API ключ не валиден.", "warn")
         return None
 
     if resp.status_code == 429:
-        _log(log_fn, "  [ОШИБКА 429] Слишком много запросов — Steam заблокировал.", "err")
-        _log(log_fn, "  Увеличьте задержку между запросами в настройках.", "warn")
+        _log(log_fn, "  Слишком много запросов — Steam заблокировал.", "err")
+        _log(log_fn, "  Повысьте задержку между запросами в настройках.", "warn")
         return None
 
     if resp.status_code != 200:
-        _log(log_fn, f"  [ОШИБКА] HTTP {resp.status_code}", "err")
+        _log(log_fn, f"  Статус: {resp.status_code}", "err")
         _log(log_fn, f"  Ответ: {resp.text[:500]}", "warn")
         return None
 
     try:
         data = resp.json()
     except Exception as e:
-        _log(log_fn, f"  [ОШИБКА] Не удалось разобрать JSON: {e}", "err")
+        _log(log_fn, f"  Не удалось разобрать JSON: {e}", "err")
         _log(log_fn, f"  Ответ: {resp.text[:500]}", "warn")
         return None
 
     response = data.get("response", {})
 
     if not response:
-        _log(log_fn, "  [ОШИБКА] Пустой ответ от Steam.", "err")
-        _log(log_fn, "  Скорее всего профиль ЗАКРЫТ (приватный).", "warn")
+        _log(log_fn, "  Пустой ответ от Steam.", "err")
+        _log(log_fn, "  Скорее всего профиль закрыт (приватный).", "warn")
         _log(
             log_fn,
-            "  -> Попросите владельца открыть: Профиль -> Изменить профиль -> "
-            "Настройки конфиденциальности -> Список игр: Открытый",
+            "  Попросите владельца открыть профиль, изменить его и сделать список игр открытым.",
             "warn",
         )
         return None
@@ -892,7 +800,7 @@ def fetch_owned_games(
     games_raw = response.get("games", [])
 
     if game_count == 0 or not games_raw:
-        _log(log_fn, "  [!] На аккаунте 0 игр или список скрыт.", "warn")
+        _log(log_fn, "  На аккаунте 0 игр или список скрыт.", "warn")
         return []
 
     games = []
@@ -909,10 +817,6 @@ def fetch_owned_games(
 
 
 def find_game(target: str, games: list) -> Optional[dict]:
-    """
-    Только точное совпадение имени (без учёта регистра), без подстрок —
-    иначе «Rust» находил бы «Trust», «Crusader Kings III» и т.п.
-    """
     t_lower = target.lower().strip()
 
     for g in games:
@@ -926,7 +830,7 @@ def resolve_game_name(raw: str, log_fn: LogFn = None) -> str:
     key = raw.strip().lower()
     if key in GAME_ALIASES:
         resolved = GAME_ALIASES[key]
-        _log(log_fn, f"  [~] Псевдоним '{raw}' -> '{resolved}'", "warn")
+        _log(log_fn, f"  Псевдоним '{raw}' -> '{resolved}'", "warn")
         return resolved
     return raw.strip()
 
@@ -940,7 +844,6 @@ def ensure_dir(path: str) -> None:
 
 
 def format_account_result_line(account_raw: str, persona_name: str) -> str:
-    """Строка для txt: ввод/ссылка и через разделитель — ник в Steam (если получили)."""
     raw = account_raw.strip()
     nick = (persona_name or "").strip()
     if nick:
@@ -951,7 +854,6 @@ def format_account_result_line(account_raw: str, persona_name: str) -> str:
 def save_result(
     game_name: str, account_raw: str, has_game: bool, persona_name: str = ""
 ) -> None:
-    """Строка в found.txt / not_found.txt: аккаунт и при наличии — personaname."""
     folder = os.path.join(OUTPUT_DIR, sanitize_name(game_name))
     ensure_dir(folder)
 
@@ -970,10 +872,6 @@ def save_profile_checked_games(
     owned_from_checklist: list[str],
     persona_name: str = "",
 ) -> None:
-    """
-    Один файл на профиль в PROFILES_DIR: первая строка — ввод/ссылка и ник Steam,
-    далее пустая строка, затем только названия из списка проверки, которые есть в библиотеке.
-    """
     ensure_dir(PROFILES_DIR)
     path = os.path.join(PROFILES_DIR, f"{steamid64}.txt")
     head = format_account_result_line(account_raw, persona_name)
@@ -994,7 +892,7 @@ def progress_bar(cur: int, total: int, width: int = 44) -> str:
     if total == 0:
         return "[" + "-" * width + "] --%"
     filled = int(width * cur / total)
-    bar = "#" * filled + "-" * (width - filled)
+    bar = "=" * filled + "." * (width - filled)
     pct = int(100 * cur / total)
     return f"[{bar}] {pct}% ({cur}/{total})"
 
@@ -1013,7 +911,7 @@ def run_check(
     _log(log_fn, "  НАЧИНАЕМ ПРОВЕРКУ", "title")
     _log(log_fn, "=" * 58, "title")
     _log(log_fn, f"  Аккаунтов : {len(accounts)}", "info")
-    _log(log_fn, f"  Игр       : {len(games)} (порядок проверки: по алфавиту)", "info")
+    _log(log_fn, f"  Игр       : {len(games)}", "info")
     _log(log_fn, f"  Задержка  : {delay}с", "info")
     _log(log_fn, "=" * 58, "title")
 
@@ -1032,37 +930,37 @@ def run_check(
         steamid = parse_account_to_steamid64(api_key, account_raw, log_fn)
 
         if not steamid:
-            _log(log_fn, "  [!!] Не удалось определить профиль Steam — пропускаем.", "err")
+            _log(log_fn, "  Не удалось определить профиль Steam — пропускаем.", "err")
             for game in games_run:
                 summary.append(
-                    (account_raw, "?", game, "ОШИБКА: профиль не найден", 0)
+                    (account_raw, "?", game, "ERROR", 0)
                 )
                 save_result(game, account_raw, False)
             if idx < total:
                 time.sleep(delay)
             continue
 
-        _log(log_fn, "  [OK] Профиль определён.", "ok")
+        _log(log_fn, "  Профиль определён.", "ok")
 
         time.sleep(delay)
         persona = fetch_persona_name(api_key, steamid, log_fn)
         if persona:
-            _log(log_fn, f'  [~] Ник в Steam: "{persona}"', "dim")
+            _log(log_fn, f'  Ник в Steam: "{persona}"', "dim")
         time.sleep(delay)
         games_list = fetch_owned_games(api_key, steamid, log_fn)
 
         if games_list is None:
-            _log(log_fn, "  [!!] Не удалось получить список игр.", "err")
+            _log(log_fn, "  Не удалось получить список игр.", "err")
             for game in games_run:
                 summary.append(
-                    (account_raw, steamid, game, "ОШИБКА: список недоступен", 0)
+                    (account_raw, steamid, game, "ERROR", 0)
                 )
                 save_result(game, account_raw, False, persona)
             if idx < total:
                 time.sleep(delay)
             continue
 
-        _log(log_fn, f"  [OK] Игр в библиотеке: {len(games_list)}", "ok")
+        _log(log_fn, f"  Игр в библиотеке: {len(games_list)}", "ok")
         _log(log_fn, "", "info")
 
         owned_from_checklist: list[str] = []
@@ -1072,12 +970,12 @@ def run_check(
             if found:
                 playtime = found.get("playtime", 0)
                 owned_from_checklist.append(game)
-                _log(log_fn, f'  [ЕСТЬ]  "{game}"', "ok")
-                summary.append((account_raw, steamid, game, "ЕСТЬ", playtime))
+                _log(log_fn, f'  Есть "{game}"', "ok")
+                summary.append((account_raw, steamid, game, "FOUND", playtime))
                 save_result(game, account_raw, True, persona)
             else:
-                _log(log_fn, f'  [НЕТ]   "{game}"', "err")
-                summary.append((account_raw, steamid, game, "НЕТ", 0))
+                _log(log_fn, f'  Нет "{game}"', "err")
+                summary.append((account_raw, steamid, game, "MISSING", 0))
                 save_result(game, account_raw, False, persona)
 
         save_profile_checked_games(steamid, account_raw, owned_from_checklist, persona)
@@ -1093,14 +991,4 @@ def run_check(
 def create_accounts_template() -> None:
     if not os.path.exists(ACCOUNTS_FILE):
         with open(ACCOUNTS_FILE, "w", encoding="utf-8") as f:
-            f.write("# Файл аккаунтов Steam\n")
-            f.write("# По одному на строку. Строки с # -- комментарии.\n")
-            f.write("# Форматы:\n")
-            f.write("#   nickname\n")
-            f.write("#   https://steamcommunity.com/id/nickname/\n")
-            f.write("#   https://steamcommunity.com/profiles/76561198000000000/\n")
-            f.write("#   76561198000000000\n")
-            f.write("#\n")
-            f.write("# Примеры:\n")
-            f.write("# gaben\n")
-            f.write("# 76561197960287930\n")
+            f.write("")
