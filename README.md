@@ -51,7 +51,3 @@ python steam_checker.py
 - `steam_checker.py` — меню и запуск
 - `steam_core.py` — основная логика
 - `requirements.txt` — зависимости
-
-## Примечание
-
-Не выкладывай свой `config.json`, если там лежит API key.
